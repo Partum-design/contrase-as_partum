@@ -75,6 +75,14 @@ main{max-width:1200px;margin:0 auto;padding:24px 20px 80px}
 .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px}
 .stat b{display:block;font-size:26px;letter-spacing:-.03em;line-height:1.1}
 .stat>span{font-size:12px;color:var(--tx2);text-transform:uppercase;letter-spacing:.06em}
+.tabs{display:inline-flex;gap:4px;padding:4px;background:var(--card);border:1px solid var(--line);border-radius:14px;margin-bottom:14px;max-width:100%;overflow-x:auto}
+.tab{padding:8px 14px;border-radius:10px;font-size:13px;font-weight:600;color:var(--tx2);white-space:nowrap;transition:.15s}
+.tab:hover{color:var(--tx)}
+.tab.on{background:linear-gradient(135deg,var(--ac),#6d28d9);color:#fff;box-shadow:0 6px 18px -8px rgba(139,92,246,.9)}
+.tab em{font-style:normal;opacity:.65;margin-left:5px;font-weight:500}
+.src{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.04em;text-transform:uppercase;padding:1px 6px;border-radius:5px;margin-right:6px;vertical-align:1px}
+.src-c{background:rgba(139,92,246,.15);color:#c4b5fd}.src-b{background:rgba(96,165,250,.15);color:#93c5fd}.src-g{background:rgba(52,211,153,.13);color:#6ee7b7}
+.addr.nouser{color:var(--tx3);font-style:italic;font-weight:400}
 .chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:6px;margin-bottom:18px;scrollbar-width:thin}
 .chip{flex-shrink:0;padding:7px 13px;border-radius:999px;border:1px solid var(--line);background:var(--card);font-size:13px;color:var(--tx2);transition:.15s}
 .chip:hover{color:var(--tx);border-color:var(--line2)}
@@ -188,6 +196,7 @@ textarea.inp{resize:vertical;min-height:70px}
         <button class="ib" id="b-menu" aria-label="Menú"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg></button>
         <div class="menu hidden" id="menu">
           <button data-m="import-md">📄 Importar inventario (.md)</button>
+          <button data-m="import-pw">🔐 Importar Bitwarden (.json) / Chrome (.csv)</button>
           <button data-m="import-bk">📥 Importar respaldo cifrado</button>
           <button data-m="export">💾 Exportar respaldo cifrado</button>
           <hr>
@@ -203,6 +212,7 @@ textarea.inp{resize:vertical;min-height:70px}
 
   <main>
     <div class="stats" id="stats"></div>
+    <div class="tabs" id="tabs"></div>
     <div class="chips" id="chips"></div>
     <div id="list"></div>
   </main>
@@ -210,6 +220,7 @@ textarea.inp{resize:vertical;min-height:70px}
 </section>
 
 <input type="file" id="file-md" accept=".md,.txt,text/markdown,text/plain" class="hidden">
+<input type="file" id="file-pw" accept=".json,.csv,application/json,text/csv" class="hidden">
 <input type="file" id="file-bk" accept=".json,application/json" class="hidden">
 <div class="toast" id="toast"></div>
 <div id="modal-root"></div>
@@ -249,7 +260,7 @@ async function open(blob, pw) {
 
 /* ---------------- State ---------------- */
 let S = null; // { key, salt, iter, data:{entries:[]} }
-let filter = { q: "", client: "", only: "" };
+let filter = { q: "", client: "", only: "", src: "" };
 const shown = new Set();
 
 const readBlob = () => { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } };
@@ -316,7 +327,7 @@ document.querySelectorAll("[data-eye]").forEach(b => b.onclick = () => {
 });
 
 function lock(msg) {
-  S = null; shown.clear(); filter = { q: "", client: "", only: "" };
+  S = null; shown.clear(); filter = { q: "", client: "", only: "", src: "" };
   $("#q").value = ""; $("#list").innerHTML = ""; $("#modal-root").innerHTML = "";
   showAuth(); if (msg) toast(msg);
 }
@@ -345,6 +356,10 @@ function enterApp() {
 
 const COLORS = [["#8b5cf6","#6d28d9"],["#22d3ee","#0891b2"],["#f472b6","#db2777"],["#34d399","#059669"],["#fbbf24","#d97706"],["#60a5fa","#2563eb"],["#f87171","#dc2626"],["#a78bfa","#7c3aed"],["#2dd4bf","#0d9488"],["#fb923c","#ea580c"]];
 const colorFor = s => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) | 0; const [a, b] = COLORS[Math.abs(h) % COLORS.length]; return `linear-gradient(135deg,${a},${b})`; };
+const SRCS = ["Correos", "Bitwarden", "Chrome"];
+const srcOf = e => e.src || "Correos";
+const inSrc = (e, s) => !s || srcOf(e).split(" + ").includes(s);
+const siteName = n => String(n || "").trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/+$/, "");
 const norm = s => String(s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
 function hl(text, q) {
@@ -362,19 +377,22 @@ function hl(text, q) {
 
 function matches(e, q) {
   if (!q) return true;
-  const hay = norm([e.client, e.email, e.url, e.notes].join(" "));
+  const hay = norm([e.client, e.email, e.url, e.notes, srcOf(e)].join(" "));
   return q.split(/\s+/).filter(Boolean).every(t => hay.includes(t));
 }
 
 function render() {
   if (!S) return;
-  const all = S.data.entries;
+  const every = S.data.entries;
+  const all = every.filter(e => inSrc(e, filter.src));
   const q = norm(filter.q.trim());
+  $("#tabs").innerHTML = [["", "Todo", every.length], ...SRCS.map(s => [s, s, every.filter(e => inSrc(e, s)).length])]
+    .filter(([k, , n]) => !k || n).map(([k, l, n]) => `<button class="tab ${filter.src === k ? "on" : ""}" data-s="${k}">${l}<em>${n}</em></button>`).join("");
   const withPw = all.filter(e => e.password).length;
   const clients = [...new Set(all.map(e => e.client))].sort((a, b) => a.localeCompare(b, "es"));
 
   $("#stats").innerHTML = [
-    [all.length, "Cuentas"], [clients.length, "Clientes"],
+    [all.length, "Cuentas"], [clients.length, !filter.src ? "Clientes / sitios" : filter.src !== "Correos" ? "Sitios" : "Clientes"],
     [`<span style="color:var(--ok)">${withPw}</span>`, "Con contraseña"],
     [`<span style="color:var(--warn)">${all.length - withPw}</span>`, "Pendientes"]
   ].map(([b, s]) => `<div class="stat"><b>${b}</b><span>${s}</span></div>`).join("");
@@ -387,7 +405,7 @@ function render() {
 
   const list = all.filter(e => (!filter.client || e.client === filter.client) && (filter.only !== "nopw" || !e.password) && matches(e, q));
 
-  if (!all.length) {
+  if (!every.length) {
     $("#list").innerHTML = `<div class="empty"><div class="big">🗝️</div><h3>Tu bóveda está vacía</h3><p>Arrastra aquí tu archivo de inventario <b>.md</b> o agrega cuentas a mano.</p>
       <div class="drop" id="drop"><p>📄 Suelta el .md aquí</p><p style="margin-top:14px;display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><button class="btn btn-g" data-m="import-md">Elegir archivo</button><button class="btn btn-g" data-m="add">Agregar a mano</button></p></div></div>`;
     return;
@@ -410,14 +428,16 @@ function render() {
 
 function row(e, q) {
   const vis = shown.has(e.id);
-  const note = [e.notes ? hl(e.notes, q) : "", e.url ? `🔗 ${hl(e.url.replace(/^https?:\/\//, ""), q)}` : ""].filter(Boolean).join(" · ");
+  const sc = { Correos: "src-c", Bitwarden: "src-b", Chrome: "src-g" };
+  const badges = filter.src ? "" : srcOf(e).split(" + ").map(s => `<span class="src ${sc[s] || "src-c"}">${esc(s)}</span>`).join("");
+  const note = badges + [e.notes ? hl(e.notes, q) : "", e.url ? `🔗 ${hl(e.url.replace(/^https?:\/\//, ""), q)}` : ""].filter(Boolean).join(" · ");
   return `<div class="row" data-id="${e.id}">
-    <div class="em"><span class="addr">${hl(e.email, q)}</span>${note ? `<span class="note">${note}</span>` : ""}</div>
+    <div class="em">${e.email ? `<span class="addr">${hl(e.email, q)}</span>` : `<span class="addr nouser">(sin usuario)</span>`}${note ? `<span class="note">${note}</span>` : ""}</div>
     <div class="pw">${e.password
       ? `<span class="val ${vis ? "shown" : ""}">${vis ? esc(e.password) : "••••••••••"}</span>`
       : `<span class="none">sin contraseña</span>`}</div>
     <div class="ra">
-      <button class="sb" data-a="cu" title="Copiar correo">${IC.mail}</button>
+      ${e.email ? `<button class="sb" data-a="cu" title="Copiar usuario">${IC.mail}</button>` : ""}
       ${e.password ? `<button class="sb" data-a="eye" title="${vis ? "Ocultar" : "Mostrar"}">${vis ? IC.eyeOff : IC.eye}</button>
       <button class="sb" data-a="cp" title="Copiar contraseña">${IC.copy}</button>` : ""}
       ${e.url ? `<button class="sb" data-a="url" title="Copiar URL">${IC.link}</button>` : ""}
@@ -440,6 +460,10 @@ addEventListener("keydown", e => {
   if (!S) return;
   if (e.key === "/" && !/INPUT|TEXTAREA/.test(document.activeElement.tagName)) { e.preventDefault(); $("#q").focus(); }
   if (e.key === "Escape") { if ($("#modal-root").innerHTML) closeModal(); else if (document.activeElement === $("#q")) { $("#q").value = ""; filter.q = ""; render(); $("#q").blur(); } }
+});
+$("#tabs").addEventListener("click", e => {
+  const b = e.target.closest(".tab"); if (!b) return;
+  filter.src = b.dataset.s; filter.client = ""; render();
 });
 $("#chips").addEventListener("click", e => {
   const b = e.target.closest(".chip"); if (!b) return;
@@ -473,6 +497,7 @@ function menuAction(m) {
   if (m === "lock") lock();
   if (m === "wipe") wipe();
   if (m === "import-md") $("#file-md").click();
+  if (m === "import-pw") $("#file-pw").click();
   if (m === "import-bk") { $("#file-bk").dataset.mode = "merge"; $("#file-bk").click(); }
   if (m === "export") exportBackup();
   if (m === "chpw") changePwModal();
@@ -488,7 +513,7 @@ async function copy(text, btn, msg, secret) {
   if (secret) { clearTimeout(clipTimer); clipTimer = setTimeout(() => navigator.clipboard?.writeText(" ").catch(() => {}), CLIP_CLEAR_MS); }
 }
 let toastT;
-function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 2200); }
+function toast(m) { const t = $("#toast"); t.textContent = m; t.classList.add("on"); clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), m.length > 50 ? 4500 : 2200); }
 
 /* ---------------- Generator ---------------- */
 function genPw(len = 20) {
@@ -518,7 +543,7 @@ function editModal(en) {
     <form autocomplete="off">
       <label>Cliente</label><div class="field"><input class="inp" name="client" list="dl-c" required value="${esc(en.client)}" placeholder="Ej. JP Dental"></div>
       <datalist id="dl-c">${clients.map(c => `<option value="${esc(c)}">`).join("")}</datalist>
-      <label>Correo / usuario</label><div class="field"><input class="inp" name="email" required value="${esc(en.email)}" placeholder="contacto@dominio.com" spellcheck="false"></div>
+      <label>Correo / usuario</label><div class="field"><input class="inp" name="email" value="${esc(en.email)}" placeholder="contacto@dominio.com" spellcheck="false"></div>
       <label>Contraseña</label><div class="field pwf"><input class="inp" name="password" type="password" value="${esc(en.password)}" placeholder="••••••••" autocomplete="new-password" spellcheck="false">
         <button type="button" class="eye" data-t aria-label="Mostrar">${IC.eye}</button><button type="button" class="eye gen" data-g title="Generar contraseña segura">🎲</button></div>
       <label>URL de acceso</label><div class="field"><input class="inp" name="url" value="${esc(en.url)}" placeholder="https://titan.hostgator.mx/login/" spellcheck="false"></div>
@@ -536,7 +561,7 @@ function editModal(en) {
   f.onsubmit = async e => {
     e.preventDefault();
     const v = Object.fromEntries(["client", "email", "password", "url", "notes"].map(k => [k, f[k].value.trim()]));
-    if (isNew) S.data.entries.push({ id: uid(), ...v, updated: Date.now() });
+    if (isNew) S.data.entries.push({ id: uid(), ...v, src: filter.src || "Correos", updated: Date.now() });
     else Object.assign(S.data.entries.find(x => x.id === en.id), v, { updated: Date.now() });
     await persist(); closeModal(); render(); toast(isNew ? "✓ Cuenta agregada" : "✓ Guardado");
   };
@@ -590,14 +615,26 @@ $("#file-bk").addEventListener("change", async e => {
     toast(`✓ ${n.added} nuevas, ${n.updated} actualizadas`);
   });
 });
+function mergeSrc(ex, e) {
+  const a = srcOf(ex).split(" + "), b = srcOf(e).split(" + ").filter(s => !a.includes(s));
+  if (!b.length) return false;
+  ex.src = SRCS.filter(s => a.concat(b).includes(s)).join(" + "); return true;
+}
 function merge(incoming) {
   let added = 0, updated = 0;
+  const keyOf = x => norm(siteName(x.client)) + "|" + norm(x.email);
+  const idx = new Map(); for (const x of S.data.entries) { const k = keyOf(x); if (!idx.has(k)) idx.set(k, []); idx.get(k).push(x); }
   for (const e of incoming) {
-    const ex = S.data.entries.find(x => norm(x.email) === norm(e.email) && x.client === e.client);
-    if (!ex) { S.data.entries.push({ ...e, id: uid() }); added++; }
-    else {
-      let ch = false;
-      for (const k of ["password", "url", "notes"]) if (e[k] && !ex[k]) { ex[k] = e[k]; ch = true; }
+    const k = keyOf(e), list = idx.get(k) || [];
+    if (e.password && list.some(x => x.password === e.password)) { mergeSrc(list.find(x => x.password === e.password), e); continue; }
+    const ex = list.find(x => !x.password || !e.password);
+    if (!ex) {
+      const n = { ...e, id: uid() };
+      if (list.length) n.notes = [n.notes, "⚠ otra contraseña para el mismo usuario"].filter(Boolean).join(" · ");
+      S.data.entries.push(n); idx.set(k, [...list, n]); added++;
+    } else {
+      let ch = mergeSrc(ex, e);
+      for (const f of ["password", "url", "notes"]) if (e[f] && !ex[f]) { ex[f] = e[f]; ch = true; }
       if (ch) updated++;
     }
   }
@@ -607,12 +644,23 @@ function merge(incoming) {
 /* ---------------- Import inventory .md ---------------- */
 $("#file-md").addEventListener("change", async e => { const f = e.target.files[0]; e.target.value = ""; if (f) importMd(await f.text()); });
 function parseMd(md) {
-  const out = []; let section = "", client = "";
+  const out = []; let section = "", client = "", src = "Correos";
   const EM = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
   const URL_RE = /https?:\/\/[^\s)]+/;
   for (const raw of md.split(/\r?\n/)) {
     const line = raw.trim();
-    if (/^##\s/.test(line)) { section = line.replace(/^##\s+/, ""); client = /^1\./.test(section) ? "Partum Hosting (interno)" : ""; continue; }
+    if (/^##\s/.test(line)) {
+      section = line.replace(/^##\s+/, "");
+      src = /bitwarden/i.test(section) ? "Bitwarden" : /chrome/i.test(section) ? "Chrome" : "Correos";
+      client = /^1\./.test(section) ? "Partum Hosting (interno)" : ""; continue;
+    }
+    if (src !== "Correos") {
+      if (!line.startsWith("|")) continue;
+      const c = line.split("|").slice(1, -1).map(x => x.trim());
+      if (!c[0] || /^nombre$/i.test(c[0]) || /^-+$/.test(c[0])) continue;
+      out.push({ client: siteName(c[0]), email: c[1] || "", url: c[2] ? "https://" + c[2].replace(/^https?:\/\//, "") : "", notes: c[3] ? "Carpeta: " + c[3] : "", src });
+      continue;
+    }
     if (/^###\s/.test(line)) { client = line.replace(/^###\s+/, ""); continue; }
     if (/pendientes|qué hacer/i.test(section)) continue;
     if (!client) continue;
@@ -620,14 +668,14 @@ function parseMd(md) {
       const cells = line.split("|").slice(1, -1).map(c => c.trim());
       const m = cells[0]?.match(EM); if (!m) continue;
       const note = (cells[1] || "").replace(/^—$/, "");
-      out.push({ client, email: m[0], notes: note, url: "" });
+      out.push({ client, email: m[0], notes: note, url: "", src });
       continue;
     }
     if (line.startsWith("-")) {
       const m = line.match(EM), u = line.match(URL_RE);
       if (m) {
         const notes = line.replace(/^-\s*/, "").replace(m[0], "").replace(/^[\s—–-]+|[\s—–-]+$/g, "").replace(/\(\s*\)/, "").trim();
-        out.push({ client, email: m[0], notes, url: "" });
+        out.push({ client, email: m[0], notes, url: "", src });
       } else if (u) {
         out.filter(x => x.client === client && !x.url).forEach(x => x.url = u[0]);
       }
@@ -642,6 +690,53 @@ async function importMd(text) {
   await persist(); render();
   toast(`✓ Importadas ${r.added} cuentas${r.updated ? `, ${r.updated} actualizadas` : ""}`);
 }
+
+/* ---------------- Import Bitwarden JSON / Chrome CSV (con contraseñas) ---------------- */
+function parseCsv(t) {
+  const rows = []; let row = [], f = "", q = false;
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (q) { if (c === '"') { if (t[i + 1] === '"') { f += '"'; i++; } else q = false; } else f += c; }
+    else if (c === '"') q = true;
+    else if (c === ",") { row.push(f); f = ""; }
+    else if (c === "\n" || c === "\r") { if (c === "\r" && t[i + 1] === "\n") i++; row.push(f); rows.push(row); row = []; f = ""; }
+    else f += c;
+  }
+  if (f || row.length) { row.push(f); rows.push(row); }
+  return rows.filter(r => r.some(Boolean));
+}
+function fromBitwarden(j) {
+  if (j.encrypted) throw new Error("Ese export de Bitwarden está cifrado. Exporta como .json (sin cifrar), impórtalo aquí y bórralo.");
+  const folders = Object.fromEntries((j.folders || []).map(f => [f.id, f.name]));
+  return (j.items || []).filter(i => i.login).map(i => ({
+    client: siteName(i.name), email: i.login.username || "", password: i.login.password || "",
+    url: (i.login.uris || [])[0]?.uri || "",
+    notes: [folders[i.folderId] ? "Carpeta: " + folders[i.folderId] : "", i.notes || ""].filter(Boolean).join(" · "),
+    src: "Bitwarden"
+  }));
+}
+function fromChrome(rows) {
+  const h = rows[0].map(x => x.trim().toLowerCase()), col = n => h.indexOf(n);
+  if (col("password") < 0) throw new Error("No reconozco ese CSV (esperaba columnas name,url,username,password).");
+  return rows.slice(1).map(r => {
+    const url = r[col("url")] || "";
+    let host = r[col("name")] || ""; if (!host) { try { host = new URL(url).hostname; } catch {} }
+    return { client: siteName(host), email: r[col("username")] || "", password: r[col("password")] || "", url, notes: col("note") >= 0 ? r[col("note")] || "" : "", src: "Chrome" };
+  });
+}
+$("#file-pw").addEventListener("change", async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  const text = await f.text();
+  try {
+    let items;
+    if (/\.csv$/i.test(f.name) || !text.trim().startsWith("{")) items = fromChrome(parseCsv(text));
+    else { const j = JSON.parse(text); if (j.app === "boveda-partum") throw new Error("Ese es un respaldo de la bóveda: usa “Importar respaldo cifrado”."); items = fromBitwarden(j); }
+    if (!items.length) throw new Error("No encontré cuentas en ese archivo.");
+    const r = merge(items.map(x => ({ ...x, updated: Date.now() })));
+    await persist(); render();
+    toast(`✓ ${items.length} leídas · ${r.added} nuevas · ${r.updated} completadas. Ya puedes borrar el archivo original.`);
+  } catch (err) { toast("⚠️ " + (err.message || "No pude leer ese archivo")); }
+});
 
 /* ---------------- Boot ---------------- */
 if (!crypto?.subtle) {

@@ -7,7 +7,9 @@ Gestor de contraseñas en un solo archivo (`index.html`), sin servidor y sin dep
 - Buscador en tiempo real (tecla `/`), filtros por cliente y "sin contraseña".
 - Copiar correo/contraseña (el portapapeles se limpia a los 30 s), generador de contraseñas.
 - Bloqueo automático tras 5 min de inactividad.
-- Importar el inventario `.md`, exportar/importar respaldo cifrado `.json`.
+- Importar el inventario `.md` (correos, Bitwarden y Chrome), con pestañas por origen y duplicados unidos.
+- Importar **con contraseñas** el export de Bitwarden (`.json` sin cifrar) y el CSV de Chrome. Todo se procesa en el navegador; después borra el archivo original.
+- Exportar/importar respaldo cifrado `.json`.
 
 ## Uso
 1. Abre `index.html` en Chrome, Edge, Safari o Firefox.
@@ -15,5 +17,5 @@ Gestor de contraseñas en un solo archivo (`index.html`), sin servidor y sin dep
 3. Arrastra el inventario `.md` para cargar las cuentas y ve llenando las contraseñas.
 4. Exporta un respaldo cifrado de vez en cuando (menú ⋮).
 
-> Este repositorio es público: no subas el inventario ni los respaldos (`.gitignore` ya los excluye).
+> Este repositorio es público: no subas el inventario, los exports ni los respaldos (`.gitignore` ya los excluye).
 > Si olvidas la contraseña maestra, los datos no se pueden recuperar.
