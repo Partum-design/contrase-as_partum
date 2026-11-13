@@ -1,0 +1,4 @@
+# Nunca subir datos reales a este repo (es público)
+*.json
+inventario*.md
+boveda-partum-*
